@@ -742,7 +742,7 @@ export defchan pull_rMx1of2 <: gen_pMx1of2<true,0> () { }
 template<pbool reset; pint V; pint M>
 defchan gen_Mbd <: chan(int<M>) (bool?! d[M]; bool?! r; bool!? a)
 {
-  { 0 <= V & std::ceil_log2(V) < M : "Initial token value out of range" };
+  { 0 = V | (0 < V & std::ceil_log2(V) < M) : "Initial token value out of range" };
 
   spec {
     /* timing fork */
@@ -940,7 +940,7 @@ defchan bd_memaddr <: chan(int<M+2>) (bool?! d[M]; bool?! r, w, rw; bool!? a)
 template<pbool reset; pint V; pint M>
 defchan gen_pMbd <: chan(int<M>) (bool?! d[M]; bool!? r; bool?! a)
 {
-  { 0 <= V & std::ceil_log2(V) < M : "Initial token value out of range" };
+  { 0 = V | (0 < V & std::ceil_log2(V) < M) : "Initial token value out of range" };
 
   spec {
     /* timing fork */
@@ -1012,7 +1012,7 @@ export defchan pull_rbd <: gen_pMbd<true,0> () { }
 template<pbool reset; pint V; pint M>
 defchan gen_ts_Mbd <: chan(int<M>) (bool?! d[M]; bool?! r; bool!? a)
 {
-  { 0 <= V & std::ceil_log2(V) < M : "Initial token value out of range" };
+  { 0 = V | (0 < V & std::ceil_log2(V) < M) : "Initial token value out of range" };
 
   spec {
     /* timing fork */
