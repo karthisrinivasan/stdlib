@@ -330,7 +330,7 @@ defproc sigbuf_gen (bool in; bool out[N])
 export defproc sigbuf <: sigbuf_gen<0> () { }
 export defproc sigbufa <: sigbuf_gen<1> () { }
 
-defcell xor2 (bool? in[2]; bool! out)
+export defcell xor2 (bool? in[2]; bool! out)
 {
    bool _in0, _in1;
    prs {
