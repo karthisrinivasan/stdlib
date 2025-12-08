@@ -1,0 +1,321 @@
+/*************************************************************************
+ *
+ *  This file is part of ACT standard library
+ *
+ *  Copyright (c) 2025 Karthi Srinivasan
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ *
+ **************************************************************************
+ */
+
+import std::cells;
+import std::gates;
+
+namespace std {
+  
+    export namespace delay_elements {
+
+        // Symmetric Delay Elements -----------------------
+        
+        /*
+            Simple delay buffer consisting of two inverters
+        */
+        export defproc delay_buffer (bool? in; bool! out)
+        {
+            std::cells::INVX1 invs[2];
+            invs[0].A = in;
+            invs[0].Y = invs[1].A;
+            invs[1].Y = out;
+            spec {
+                timing in+ : out+ < in-  
+                timing in- : out- < in+  
+            }
+        }
+
+        /*
+            Delay buffer consisting of two weak-inverters in series.
+            L : Length of weak transistors
+        */
+        export template <pint L>
+        defproc weak_delay_buffer (bool? in; bool! out) {
+            bool x;
+            prs {
+                in<1,L> => x-
+                x<1,L> => out-
+            }
+            spec {
+                timing in+ : out+ < in-  
+                timing in- : out- < in+  
+            }
+        }
+        // Symmetric Delay Elements -----------------------
+
+        // Asymmetric Delay Elements ----------------------
+        // Asymmetric : Different propagation delays for rising edge (1) and falling edge (0)
+        /*
+            Recursive asymmetric delay lines that use themselves to create long delays.
+            REC: Recursion level
+            L : Length of weak transistors
+            Base case: two asymmetric inverters in series
+            Recursive step: insert REC-1 of the correct type on the slow path to make it even slower
+            Has additional transistor to prevent transient short and reduce power consumption
+        */
+        /*
+            Fast-0, Slow-1 
+            Delay of rising edge - high
+            Delay of falling edge - 2 transitions
+        */
+        export template <pint REC, L> defproc fast0_slow1_rec (bool? in; bool! out);
+        
+        /*
+            Fast-1, Slow-0
+            Delay of falling edge - high
+            Delay of rising edge - 2 transitions
+        */
+        export template <pint REC, L> defproc fast1_slow0_rec (bool? in; bool! out);
+
+        export template <pint REC, L>
+        defproc fast0_slow1_rec (bool? in; bool! out) {
+            { REC>=0 : "what" };
+            bool x; bool f0s1out, f1s0out;
+            [ REC=0 ->  f0s1out = in;
+                        f1s0out = x;
+            []REC>0 ->  fast0_slow1_rec<REC-1,L> f0s1r(in); f0s1out = f0s1r.out;
+                        fast1_slow0_rec<REC-1,L> f1s0r(x); f1s0out = f1s0r.out;
+            ]
+            prs {
+            [keeper=0]  f0s1out<1,L> & in<1,1> -> x-
+            [keeper=0] ~in<1,1> -> x+
+            [keeper=0]   x<1,1> -> out-
+            [keeper=0] ~f1s0out<1,L> & ~x<1,1> -> out+
+            }
+            spec {
+                timing in+ : out+ < in-  
+                timing in- : out- < in+  
+            }
+        }
+
+        export template <pint REC, L>
+        defproc fast1_slow0_rec (bool? in; bool! out) {
+            { REC>=0 : "what" };
+            bool x; bool f0s1out, f1s0out;
+            [ REC=0 ->  f1s0out = in;
+                        f0s1out = x;
+            []REC>0 ->  fast1_slow0_rec<REC-1,L> f1s0r(in); f1s0out = f1s0r.out;
+                        fast0_slow1_rec<REC-1,L> f0s1r(x);  f0s1out = f0s1r.out;
+            ]
+            prs {
+            [keeper=0]  in<1,1> -> x-
+            [keeper=0] ~f1s0out<1,L> & ~in<1,1> -> x+
+            [keeper=0]  f0s1out<1,L> &  x<1,1> -> out-
+            [keeper=0] ~x<1,1> -> out+
+            }
+            spec {
+                timing in+ : out+ < in-  
+                timing in- : out- < in+  
+            }
+        }
+
+        /*
+            Meta-elements that use a symmetric delay line twice (0-delay + 1-delay)
+            to simulate an asymmetric delay line. 
+            The symmetric delay line component must be connected between dl_in and dl_out.
+            Slow rising edge (1) and fast falling edge (0).
+        */
+        /*
+            Delay of rising edge - (0-delay + 1-delay) of symm. DL + 5 transitions
+            Delay of falling edge - 2 transitions
+        */
+        export defproc reuse_1 (bool? in; bool! out; bool! dl_in; bool? dl_out) {
+            bool x, y, _y;
+            y = dl_in;
+            std::cells::NOR2X1 nor;
+            nor.A = dl_out;
+            nor.B = x;
+            nor.Y = out;
+            prs {
+                _y => y-
+                Reset | in & x -> _y-
+                ~Reset & ~x -> _y+
+                dl_out & in #> x-
+            }
+            spec {
+                timing in+ : out+ < in-  
+                timing in- : out- < in+  
+            }
+        }
+
+        export defcell PCELEM2 (bool? A, B; bool! Y) {
+            bool _Y;
+            prs {
+                A & B -> _Y-
+                ~A & ~B -> _Y+
+                _Y => Y-
+            }
+        }
+        export defcell UACELEM2 (bool? A, B; bool! Y) {
+            prs {
+                A & B -> Y-
+                ~A -> Y+
+            }
+        }
+        export defcell DACELEM2 (bool? A, B; bool! Y) {
+            prs {
+                ~A & ~B -> Y+
+                A -> Y-
+            }
+        }
+
+        /*
+            Delay of rising edge - (0-delay + 1-delay) of symm. DL + 7 transitions
+            Delay of falling edge - 2 transitions
+        */
+        export defproc reuse_2 (bool? in; bool! out; bool! dl_in; bool? dl_out) {
+            bool x, _x, do;
+
+            std::gates::ctree<2,true> C0;
+            UACELEM2 UAC0;
+            DACELEM2 DAC0;
+            std::cells::INVX1 INV0;
+            std::cells::INVX1 INV1;
+            std::cells::NOR2X1 NOR0;
+
+            C0.in[0] = in;
+            C0.in[1] = dl_out;
+            C0.out   = x;
+
+            UAC0.A = NOR0.Y;
+            UAC0.B = in;
+            UAC0.Y = do;
+
+            DAC0.A = x;
+            DAC0.B = dl_out;
+            DAC0.Y = out;
+
+            INV1.A = x;
+            INV1.Y = _x;
+            NOR0.A = _x;
+            NOR0.B = Reset;
+            INV0.A = do;
+            INV0.Y = dl_in;
+            spec {
+                timing in+ : out+ < in-  
+                timing in- : out- < in+  
+            }
+        }
+        // Asymmetric Delay Elements ----------------------
+    }
+
+    export namespace delay_lines {
+        /*
+            Chains of delay elements. 
+            N : number of elements in series.
+            For other parameters specific to each, see the delay elements above.
+        */
+
+        // Symmetric Delay Lines -----------------------
+        export template <pint N>
+        defproc chain_delay_buffer (bool? in; bool! out) {
+            std::delay_elements::delay_buffer d[N];
+            in = d[0].in;
+            ( i : N-1 : d[i].out = d[i+1].in; )
+            d[N-1].out = out;
+            spec {
+                timing in+ : out+ < in-  
+                timing in- : out- < in+  
+            }
+        }
+
+        export template <pint N, L>
+        defproc chain_weak_delay_buffer (bool? in; bool! out) {
+            std::delay_elements::weak_delay_buffer<L> d[N];
+            in = d[0].in;
+            ( i : N-1 : d[i].out = d[i+1].in; )
+            d[N-1].out = out;
+            spec {
+                timing in+ : out+ < in-  
+                timing in- : out- < in+  
+            }
+        }
+        // Symmetric Delay Lines -----------------------
+
+        // Asymmetric Delay Lines ----------------------
+        export template <pint N, REC, L>
+        defproc chain_recursive_fast0_slow1 (bool? in; bool! out) {
+            std::delay_elements::fast0_slow1_rec<REC, L> d[N];
+            in = d[0].in;
+            ( i : N-1 : d[i].out = d[i+1].in; )
+            d[N-1].out = out;
+            spec {
+                timing in+ : out+ < in-  
+                timing in- : out- < in+  
+            }
+        }
+
+        export template <pint N, REC, L>
+        defproc chain_recursive_fast1_slow0 (bool? in; bool! out) {
+            std::delay_elements::fast1_slow0_rec<REC, L> d[N];
+            in = d[0].in;
+            ( i : N-1 : d[i].out = d[i+1].in; )
+            d[N-1].out = out;
+            spec {
+                timing in+ : out+ < in-  
+                timing in- : out- < in+  
+            }
+        }
+
+        export template <pint N, L>
+        defproc chain_reuse_1_delay_buffer (bool? in; bool! out) {
+            std::delay_elements::reuse_1 r(in, out);
+            chain_delay_buffer<N> d(r.dl_in, r.dl_out);
+            spec {
+                timing in+ : out+ < in-  
+                timing in- : out- < in+  
+            }
+        }
+
+        export template <pint N, L>
+        defproc chain_reuse_2_delay_buffer (bool? in; bool! out) {
+            std::delay_elements::reuse_2 r(in, out);
+            chain_delay_buffer<N> d(r.dl_in, r.dl_out);
+            spec {
+                timing in+ : out+ < in-  
+                timing in- : out- < in+  
+            }
+        }
+
+        export template <pint N, L>
+        defproc chain_reuse_1_weak_delay_buffer (bool? in; bool! out) {
+            std::delay_elements::reuse_1 r(in, out);
+            chain_weak_delay_buffer<N,L> d(r.dl_in, r.dl_out);
+            spec {
+                timing in+ : out+ < in-  
+                timing in- : out- < in+  
+            }
+        }
+
+        export template <pint N, L>
+        defproc chain_reuse_2_weak_delay_buffer (bool? in; bool! out) {
+            std::delay_elements::reuse_2 r(in, out);
+            chain_weak_delay_buffer<N,L> d(r.dl_in, r.dl_out);
+            spec {
+                timing in+ : out+ < in-  
+                timing in- : out- < in+  
+            }
+        }
+        // Asymmetric Delay Lines ----------------------
+
+    }
+
+}
