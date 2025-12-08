@@ -27,6 +27,10 @@ namespace std {
     export namespace delay_elements {
 
         // Symmetric Delay Elements -----------------------
+        
+        /*
+            Simple delay buffer consisting of two inverters
+        */
         export defproc delay_buffer (bool? in; bool! out)
         {
             std::cells::INVX1 invs[2];
@@ -39,6 +43,10 @@ namespace std {
             }
         }
 
+        /*
+            Delay buffer consisting of two weak-inverters in series.
+            L : Length of weak transistors
+        */
         export template <pint L>
         defproc weak_delay_buffer (bool? in; bool! out) {
             bool x;
@@ -54,8 +62,27 @@ namespace std {
         // Symmetric Delay Elements -----------------------
 
         // Asymmetric Delay Elements ----------------------
+        // Asymmetric : Different propagation delays for rising edge (1) and falling edge (0)
+        /*
+            Recursive asymmetric delay lines that use themselves to create long delays.
+            REC: Recursion level
+            L : Length of weak transistors
+            Base case: two asymmetric inverters in series
+            Recursive step: insert REC-1 of the correct type on the slow path to make it even slower
+            Has additional transistor to prevent transient short and reduce power consumption
+        */
+        /*
+            Fast-0, Slow-1 
+            Delay of rising edge - high
+            Delay of falling edge - 2 transitions
+        */
         export template <pint REC, L> defproc fast0_slow1_rec (bool? in; bool! out);
         
+        /*
+            Fast-1, Slow-0
+            Delay of falling edge - high
+            Delay of rising edge - 2 transitions
+        */
         export template <pint REC, L> defproc fast1_slow0_rec (bool? in; bool! out);
 
         export template <pint REC, L>
@@ -100,18 +127,28 @@ namespace std {
             }
         }
 
+        /*
+            Meta-elements that use a symmetric delay line twice (0-delay + 1-delay)
+            to simulate an asymmetric delay line. 
+            The symmetric delay line component must be connected between dl_in and dl_out.
+            Slow rising edge (1) and fast falling edge (0).
+        */
+        /*
+            Delay of rising edge - (0-delay + 1-delay) of symm. DL + 5 transitions
+            Delay of falling edge - 2 transitions
+        */
         export defproc reuse_1 (bool? in; bool! out; bool! dl_in; bool? dl_out) {
-            std::cells::XOR2X1 xor;
-            bool a, b, _i;
-            _i = xor.A;
-            a = xor.B;
-            xor.Y = dl_in;
-            b = dl_out;
+            bool x, y, _y;
+            y = dl_in;
+            std::cells::NOR2X1 nor;
+            nor.A = dl_out;
+            nor.B = x;
+            nor.Y = out;
             prs {
-                b & in #> a-
-                a -> out-
-                ~a & ~b -> out+
-                in => _i-
+                _y => y-
+                Reset | in & x -> _y-
+                ~Reset & ~x -> _y+
+                dl_out & in #> x-
             }
             spec {
                 timing in+ : out+ < in-  
@@ -140,6 +177,10 @@ namespace std {
             }
         }
 
+        /*
+            Delay of rising edge - (0-delay + 1-delay) of symm. DL + 7 transitions
+            Delay of falling edge - 2 transitions
+        */
         export defproc reuse_2 (bool? in; bool! out; bool! dl_in; bool? dl_out) {
             bool x, _x, do;
 
@@ -177,6 +218,11 @@ namespace std {
     }
 
     export namespace delay_lines {
+        /*
+            Chains of delay elements. 
+            N : number of elements in series.
+            For other parameters specific to each, see the delay elements above.
+        */
 
         // Symmetric Delay Lines -----------------------
         export template <pint N>
