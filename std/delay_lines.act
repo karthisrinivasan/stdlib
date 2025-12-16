@@ -137,17 +137,19 @@ namespace std {
             Delay of rising edge - (0-delay + 1-delay) of symm. DL + 5 transitions
             Delay of falling edge - 2 transitions
         */
-        export defproc reuse_1 (bool? in; bool! out; bool! dl_in; bool? dl_out) {
+       export defproc reuse_1 (bool? in; bool! out; bool! dl_in; bool? dl_out) {
             bool x, y, _y;
             y = dl_in;
+            bool _Reset;
             std::cells::NOR2X1 nor;
             nor.A = dl_out;
             nor.B = x;
             nor.Y = out;
             prs {
+                Reset => _Reset-
                 _y => y-
-                Reset | in & x -> _y-
-                ~Reset & ~x -> _y+
+                _Reset & in & x -> _y-
+                ~_Reset | ~x -> _y+
                 dl_out & in #> x-
             }
             spec {
